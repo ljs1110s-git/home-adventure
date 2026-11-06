@@ -1,6 +1,7 @@
 import { STR } from "./strings.js";
-import { createInterface } from "./interface.js";
+import { createInterface } from "./interface.js?v=3";
 import { MONSTERS } from "./monsters.js";
+import { UPGRADE_CATALOG } from "./upgrades.js?v=3";
 
 /* ===== canvas ===== */
 const canvas = document.getElementById("c");
@@ -85,21 +86,16 @@ function setOpt(k){return !META.set||META.set[k]===undefined?true:!!META.set[k];
 function toggleOpt(k){META.set=META.set||{};META.set[k]=setOpt(k)?0:1;saveMeta();}
 function saveMeta(){try{localStorage.setItem(META_KEY,JSON.stringify(META));}catch(e){}}
 const shopLv=id=>META.shop[id]||0;
-const SHOP=[
-{id:"proj",max:2,cost:l=>250+l*450},
-{id:"rapid",max:5,cost:l=>80+l*95},
-{id:"power",max:5,cost:l=>80+l*95},
-{id:"hp",max:5,cost:l=>60+l*75},
-{id:"spd",max:5,cost:l=>60+l*75},
-{id:"coin",max:3,cost:l=>120+l*160},
-{id:"magnetR",max:3,cost:l=>90+l*120},
-{id:"ultcd",max:3,cost:l=>150+l*190},
-{id:"xp",max:3,cost:l=>120+l*160},
-{id:"armor",max:4,cost:l=>100+l*130},
-{id:"revive",max:1,cost:l=>800},
-{id:"luck",max:3,cost:l=>130+l*170},
-{id:"wslot",max:2,cost:l=>600+l*900},
-{id:"pslot",max:2,cost:l=>500+l*700}];
+const SHOP=UPGRADE_CATALOG;
+let shopRevision=0,shopReturnMode='select';
+function purchaseUpgrade(id){
+ if(G.mode!=='shop')return {ok:false,message:'탐험을 마친 뒤 상점에서 강화할 수 있어요.'};
+ const item=SHOP.find(s=>s.id===id);if(!item)return {ok:false,message:'강화 항목을 찾을 수 없어요.'};
+ const lv=shopLv(id);if(lv>=item.max)return {ok:false,message:'이미 최대 단계까지 강화했어요.'};
+ const price=item.cost(lv);if(META.coins<price)return {ok:false,message:(price-META.coins).toLocaleString()+' 코인이 더 필요해요.'};
+ META.coins-=price;META.shop[id]=lv+1;shopRevision++;saveMeta();ensureAudio();sfx('levelup');
+ return {ok:true,message:item.name+' Lv.'+(lv+1)+' 구매 완료! 다음 탐험부터 적용됩니다.'};
+}
 
 /* ===== data ===== */
 const CHARACTERS=[
@@ -197,11 +193,11 @@ G.hero.weapons[ch.weapon]=1;
 G.hero.hp=heroMaxHp(G.hero);
 G.mons.length=0;G.projs.length=0;G.eprojs.length=0;G.gems.length=0;G.items.length=0;
 G.fx.length=0;G.nums.length=0;G.parts.length=0;G.pools.length=0;G.zones.length=0;
-G.kills=0;G.coins=0;G.runT=0;G.stage=0;G.stageT=0;G.spawnCd=1;G.boss=null;G.mini=null;G.bossDead=false;G.pendingAdvance=false;
+G.kills=0;G.coins=0;G.bankGain=0;G.runT=0;G.stage=0;G.stageT=0;G.spawnCd=1;G.boss=null;G.mini=null;G.bossDead=false;G.pendingAdvance=false;
 G.miniSpawned=false;G.banked=false;G.chestShow=null;G.slowAll=0;G.banner={t:2.5,txt:STR.stageEnter(1)};
 G.mode="play";playBgm("bgm_dungeon");
 }
-function bankCoins(){if(G.banked)return;G.banked=true;META.coins+=Math.round(G.coins*(1+.2*shopLv("coin")));saveMeta();}
+function bankCoins(){if(G.banked)return;G.banked=true;G.bankGain=Math.round(G.coins*(1+.2*shopLv("coin")));META.coins+=G.bankGain;saveMeta();}
 
 /* ===== xp / levelup ===== */
 function gainXp(h,v){h.xp+=v*xpMult()*(1+.1*(h.passives.note||0));while(h.xp>=h.xpNext){h.xp-=h.xpNext;h.lv++;h.xpNext=Math.round(6+h.lv*3+h.lv*h.lv*.35);openLevelUp();}}
@@ -912,7 +908,7 @@ ctx.clearRect(0,0,W,H);
 if(G.mode==="title"){renderTitle();return;}
 if(G.mode==="select"){renderSelect();return;}
 if(G.mode==="settings"){btn.zones=[];renderSettings();return;}
-if(G.mode==="shop"){renderShop();return;}
+if(G.mode==="shop"){ctx.fillStyle='#102026';ctx.fillRect(0,0,W,H);return;}
 const h=G.hero;if(!h)return;
 if(G.shake>0){ctx.save();ctx.translate((G.rng()-.5)*G.shake,(G.rng()-.5)*G.shake);}
 drawBg();
@@ -1257,26 +1253,6 @@ for(let i=0;i<opts.length;i++){const y=140+i*74;
  ctx.fillStyle="#fff";ctx.font="bold 16px sans-serif";ctx.textAlign="center";
  ctx.fillText(on?STR.optOn:STR.optOff,x0+rw-64,y+35);}
 btn(W/2-90,140+opts.length*74+20,180,52,STR.back,"#4a4a6a");}
-function renderShop(){
-ctx.fillStyle="#0d1020";ctx.fillRect(0,0,W,H);
-ctx.fillStyle="#fff";ctx.font="bold 28px sans-serif";ctx.textAlign="center";ctx.fillText(STR.shopTitle,W/2,54);
-ctx.fillStyle="#ffd23f";ctx.font="bold 20px sans-serif";ctx.fillText("● "+META.coins,W/2,86);
-const cols=Math.max(2,Math.min(4,Math.floor(W/240))),cw=Math.min(230,(W-60)/cols-10),chh=86;
-const x0=W/2-(cols*(cw+10))/2;
-for(let i=0;i<SHOP.length;i++){const s=SHOP[i],lv=shopLv(s.id);
- const x=x0+(i%cols)*(cw+10),y=110+Math.floor(i/cols)*(chh+10);
- s._x=x;s._y=y;s._w=cw;s._h=chh;
- const afford=lv<s.max&&META.coins>=s.cost(lv);
- ctx.fillStyle=lv>=s.max?"#1c2438":afford?"#22335c":"#181f38";ctx.fillRect(x,y,cw,chh);
- ctx.strokeStyle=afford?"#ffd700":"#3a4a7a";ctx.lineWidth=2;ctx.strokeRect(x,y,cw,chh);
- ctx.fillStyle="#fff";ctx.font="bold 14px sans-serif";ctx.textAlign="left";
- ctx.fillText(STR.shopItems[s.id].name,x+10,y+22);
- ctx.fillStyle="#9fb3d8";ctx.font="11px sans-serif";
- ctx.fillText(STR.shopItems[s.id].desc,x+10,y+40);
- ctx.fillStyle="#8fd4ff";ctx.fillText("Lv "+lv+" / "+s.max,x+10,y+60);
- ctx.fillStyle=lv>=s.max?"#66739a":"#ffd23f";ctx.font="bold 13px sans-serif";ctx.textAlign="right";
- ctx.fillText(lv>=s.max?STR.maxed:"● "+s.cost(lv),x+cw-10,y+60);}
-btn(W/2-90,H-70,180,46,STR.back,"#444f70");}
 function btn(x,y,w,hh,txt,c){
 const g=ctx.createLinearGradient(x,y,x,y+hh);g.addColorStop(0,c);g.addColorStop(1,'#1a2a35');
 roundPanel(x,y,w,hh,12,g,'#dcc48d88');
@@ -1373,14 +1349,7 @@ if(G.mode==="settings"){
  const zones=btn.zones||[];
  for(const z of zones)if(x>=z.x&&x<=z.x+z.w&&y>=z.y&&y<=z.y+z.h&&z.txt===STR.back){G.mode="select";return;}
  return;}
-if(G.mode==="shop"){
- for(const s of SHOP){if(s._x!==undefined&&x>=s._x&&x<=s._x+s._w&&y>=s._y&&y<=s._y+s._h){
-  const lv=shopLv(s.id);
-  if(lv<s.max&&META.coins>=s.cost(lv)){META.coins-=s.cost(lv);META.shop[s.id]=lv+1;saveMeta();sfx("pop");}
-  return;}}
- const zones=btn.zones||[];
- for(const z of zones)if(x>=z.x&&x<=z.x+z.w&&y>=z.y&&y<=z.y+z.h&&z.txt===STR.back){G.mode="select";return;}
- return;}
+if(G.mode==="shop")return;
 if(G.mode==="levelup"){
  for(const c of G.choices)if(c._x!==undefined&&x>=c._x&&x<=c._x+c._w&&y>=c._y&&y<=c._y+c._h){applyChoice(c);return;}
  return;}
@@ -1399,7 +1368,8 @@ if(e.target?.closest?.("button,dialog,a,input,select,textarea"))return;
 if(e.code==="Escape"){
  if(G.mode==="play")G.mode="pause";
  else if(G.mode==="pause")G.mode="play";
- else if(G.mode==="shop"||G.mode==="settings")G.mode="select";
+ else if(G.mode==="shop")G.mode=shopReturnMode;
+ else if(G.mode==="settings")G.mode="select";
  return;}
 if(e.code==="Space"||e.code==="Enter"){
  if(G.mode==="title")G.mode="select";
@@ -1478,8 +1448,8 @@ for(const t of e.changedTouches)if(joy.on&&t.identifier===joy.id){joy.on=false;j
 e.preventDefault();},{passive:false});
 canvas.addEventListener("touchcancel",e=>{joy.on=false;joy.dx=joy.dy=0;},{passive:false});
 
-const HOME_UI=createInterface({characters:CHARACTERS,strings:STR,monsters:MONSTERS,
- getState:()=>({mode:G.mode,index:G.charIdx,coins:META.coins,heroIndex:G.hero?CHARACTERS.indexOf(G.hero.char):G.charIdx,assetsLoaded:Object.values(ART).filter(im=>im.complete&&im.naturalWidth).length,assetsTotal:Object.keys(ART).length}),
+const HOME_UI=createInterface({characters:CHARACTERS,strings:STR,monsters:MONSTERS,upgrades:SHOP,purchase:purchaseUpgrade,closeShop:()=>G.mode=shopReturnMode,
+ getState:()=>({mode:G.mode,index:G.charIdx,coins:META.coins,shopLevels:META.shop,shopRevision,runEarned:G.bankGain||0,kills:G.kills,runTime:Math.floor(G.runT),heroIndex:G.hero?CHARACTERS.indexOf(G.hero.char):G.charIdx,assetsLoaded:Object.values(ART).filter(im=>im.complete&&im.naturalWidth).length,assetsTotal:Object.keys(ART).length}),
  select:i=>{G.charIdx=i;G.mode='select';},start:()=>{ensureAudio();startRun(G.charIdx);},goTitle:()=>G.mode='title',
- pause:()=>{if(G.mode==='play')G.mode='pause';},resume:()=>{if(G.mode==='pause')G.mode='play';},shop:()=>G.mode='shop',settings:()=>G.mode='settings'});
+ pause:()=>{if(G.mode==='play')G.mode='pause';},resume:()=>{if(G.mode==='pause')G.mode='play';},shop:()=>{if(G.mode!=='shop')shopReturnMode=G.mode;G.mode='shop';},settings:()=>G.mode='settings'});
 HOME_UI.sync();
