@@ -14,7 +14,7 @@ export const ABILITIES = [
  {role:'함정형',color:'#dda6ce',basic:'발밑에 장난감 블록 함정을 설치합니다. 밟는 적에게 지속 피해를 줍니다.',special:'주변에 블록 함정 40개를 펼칩니다. 각 함정은 8초 동안 유지됩니다.',tags:['함정 40개','8초 유지'],tip:'함정을 놓으며 이동하고 적이 따라오게 만드세요.'}
 ];
 
-export function createInterface({characters,strings,monsters,upgrades,purchase,toggleQuality,closeShop,getState,select,start,goTitle,pause,resume,shop,settings}) {
+export function createInterface({characters,strings,monsters,upgrades,chooseSkill,purchase,toggleQuality,closeShop,getState,select,start,goTitle,pause,resume,shop,settings}) {
  const variants=[
  {name:'초록 침입균',family:'세균',sprite:13,sheet:'characters',trait:'거실부터 등장하는 기본 추격형 세균'},
  {name:'그림자 세균',family:'세균',sprite:1,sheet:'monsters',trait:'가벼운 몸으로 빠르게 접근하는 세균'},
@@ -55,17 +55,20 @@ export function createInterface({characters,strings,monsters,upgrades,purchase,t
   <footer class="shop-footer"><span>◉ 코인은 탐험 종료 또는 메뉴로 나갈 때 정산됩니다.</span><button class="primary" data-action="close-shop">준비 완료 · 돌아가기 →</button></footer>
  </section>
  <section class="home-screen result-screen" data-screen="result" hidden><div class="result-card"><span class="eyebrow">EXPEDITION REPORT</span><h1 id="result-title"></h1><p id="result-stats"></p><div class="payout"><span>이번 탐험 정산 코인</span><strong id="result-earned">+0</strong><small>보유 코인 <b data-wallet>0</b> ◉</small></div><p class="result-tip">모은 코인으로 강화하면 다음 탐험이 더 수월해져요.</p><button class="primary" data-action="shop">◉ 코인으로 강화하기 <span>→</span></button><button class="result-retry" data-action="select">탐험대 선택으로 →</button></div></section>
+ <section class="home-screen skill-screen" data-screen="levelup" role="dialog" aria-modal="true" aria-labelledby="skill-title" hidden><div class="skill-panel"><span class="eyebrow">LEVEL UP · 전투 일시정지</span><h1 id="skill-title" tabindex="-1">어떤 기술을 강화할까요?</h1><p id="skill-queue"></p><div class="skill-grid" id="skill-grid"></div><p class="skill-footnote">하나를 선택하면 적용됩니다. 숫자 1 · 2 · 3으로도 선택할 수 있어요.</p></div></section>
  <button class="quality-toggle" hidden data-action="quality" title="렉이 심하면 저사양 모드를 사용하세요">화질 자동</button>
  <button class="battle-help" data-action="help" hidden>ⓘ 능력 안내</button>
  <dialog class="ability-dialog"><div class="dialog-head"><div><span class="eyebrow">FIELD GUIDE</span><h2>우리집 탐험 도감</h2></div><button class="close-dialog" aria-label="능력 도감 닫기">×</button></div><p class="dialog-intro">기본 무기는 자동으로 공격합니다. 특수능력은 적을 공격해 게이지를 100% 채운 뒤 사용할 수 있습니다.</p><div class="guide-tabs" role="tablist" aria-label="도감 분류"><button role="tab" id="tab-heroes" data-guide-tab="heroes" aria-selected="true" aria-controls="guide-heroes">탐험가 능력 · 13</button><button role="tab" id="tab-monsters" data-guide-tab="monsters" aria-selected="false" aria-controls="guide-monsters">침공 몬스터 · 26</button></div><div class="guide-list" id="guide-heroes" role="tabpanel" aria-labelledby="tab-heroes">${characters.map((c,i)=>`<article class="guide-entry" data-guide="${i}">${sprite(i)}<div><span class="role-label">${ABILITIES[i].role}</span><h3>${strings.chars[c.id].name}</h3><h4>${strings.chars[c.id].weapon} · 자동 공격</h4><p>${ABILITIES[i].basic}</p><h4>${strings.ultNames[c.id].replace('특수능력: ','')}</h4><p>${ABILITIES[i].special}</p></div></article>`).join('')}</div><div class="monster-guide" id="guide-monsters" role="tabpanel" aria-labelledby="tab-monsters" hidden><p class="monster-summary">일반 적 21종 · 중간보스 4종 · 최종보스 1종<br>거실 → 주방 → 욕실 → 아이방 → 다락방으로 갈수록 새로운 적이 등장합니다.</p><div class="monster-grid">${variants.map(m=>`<article class="monster-card"><span class="atlas-portrait" style="background-image:url('./assets/${m.sheet}-v2.png');--sprite-x:${m.sprite%4/3*100}%;--sprite-y:${Math.floor(m.sprite/4)/3*100}%"></span><small>${m.family}</small><h3>${m.name}</h3><p>${m.trait}</p></article>`).join('')}</div></div></dialog>`;
- let last='',selected=-1,coins=-1,loaded=-1,pausedByGuide=false,quality='',resultKey='',shopKey='',activeCategory='all';
+ let last='',selected=-1,coins=-1,loaded=-1,pausedByGuide=false,quality='',skillVersion=-1,skillPending=-1,resultKey='',shopKey='',activeCategory='all';
  const dialog=root.querySelector('dialog');
  const closeGuide=()=>{dialog.close();if(pausedByGuide){resume();document.getElementById('c')?.focus?.();pausedByGuide=false;}};
  root.querySelector('.close-dialog').addEventListener('click',closeGuide);
  dialog.addEventListener('cancel',e=>{e.preventDefault();closeGuide();});
  dialog.addEventListener('click',e=>{if(e.target===dialog)closeGuide();});
- document.addEventListener('keydown',e=>{if(dialog.open){e.stopImmediatePropagation();if(e.key==='Escape'){e.preventDefault();closeGuide();}}else if(e.key==='Escape'&&getState().mode==='shop'){e.preventDefault();e.stopImmediatePropagation();closeShop();sync();}},true);
+ document.addEventListener('keydown',e=>{if(getState().mode==='levelup'&&['Digit1','Digit2','Digit3'].includes(e.code)){e.preventDefault();e.stopImmediatePropagation();if(!e.repeat){chooseSkill(Number(e.code.slice(-1))-1,getState().choiceRevision);sync();document.getElementById('c')?.focus?.();}return;}if(dialog.open){e.stopImmediatePropagation();if(e.key==='Escape'){e.preventDefault();closeGuide();}}else if(e.key==='Escape'&&getState().mode==='shop'){e.preventDefault();e.stopImmediatePropagation();closeShop();sync();}},true);
  root.addEventListener('click',e=>{
+  const skill=e.target.closest('[data-skill-choice]');if(skill){if(chooseSkill(Number(skill.dataset.skillChoice),Number(skill.dataset.skillVersion))){sync();document.getElementById('c')?.focus?.();}return;}
+
   const filter=e.target.closest('[data-shop-filter]');if(filter){activeCategory=filter.dataset.shopFilter;shopKey='';sync();return;}
   const buy=e.target.closest('[data-buy]');if(buy){if(buy.disabled)return;const id=buy.dataset.buy;const outcome=purchase(id);const message=root.querySelector('#shop-feedback');message.textContent=outcome.message;message.hidden=false;message.dataset.success=String(outcome.ok);shopKey='';sync();root.querySelector(`[data-upgrade="${id}"]`)?.focus?.();return;}
   const tab=e.target.closest('[data-guide-tab]');
@@ -96,10 +99,23 @@ export function createInterface({characters,strings,monsters,upgrades,purchase,t
    return `<article class="upgrade-card ${maxed?'maxed':affordable?'affordable':'locked'}" data-upgrade="${u.id}" tabindex="-1"><div class="upgrade-head"><span class="upgrade-art" style="--sprite-x:${u.icon%4/3*100}%;--sprite-y:${Math.floor(u.icon/4)/3*100}%" aria-hidden="true"></span><div><span class="upgrade-category">${{attack:'공격 강화',survival:'생존 강화',growth:'수집 · 성장'}[u.category]}</span><h2>${u.name}</h2></div><span class="upgrade-level">${maxed?'MAX':`Lv.${lv} / ${u.max}`}</span></div><p class="upgrade-desc">${u.desc}</p><div class="upgrade-steps" aria-label="강화 단계">${Array.from({length:u.max},(_,i)=>`<i class="${i<lv?'filled':''}"></i>`).join('')}</div><div class="upgrade-effect"><span><small>현재</small>${u.effect(lv)}</span>${maxed?'<b class="max-badge">최대 강화 완료</b>':`<b>→</b><span><small>다음 단계</small>${u.effect(lv+1)}</span>`}</div><button class="purchase-button" data-buy="${u.id}" ${maxed||!affordable?'disabled':''}>${maxed?'✓ 구매 완료':affordable?`◉ ${price.toLocaleString()} 코인으로 강화`:`◉ ${price.toLocaleString()} · ${(price-state.coins).toLocaleString()} 코인 부족`}</button><small class="upgrade-permanent">모든 탐험가 적용 · 영구 유지</small></article>`;
   }).join('');
  }
+ function renderSkills(state){
+  const weaponFrames={hammer:0,bolt:1,boomerang:2,milk:3,chalk:4,bag:5,brush:6,ddakji:7,alarm:8,shield:9,ruler:10,clock:11,garlic:12,tack:13};
+  const passiveFrames={swift:2,amp:0,vital:15,magnet:14,bigger:5,bell:11,note:7};
+  root.querySelector('#skill-grid').innerHTML=state.choices.map((c,i)=>{
+   const weapon=c.k==='w'||c.k==='nw',passive=c.k==='p'||c.k==='np',fresh=c.k==='nw'||c.k==='np';
+   const data=weapon?strings.weapons[c.id]:passive?strings.passives[c.id]:{name:strings.heal,desc:strings.healDesc};
+   const frame=weapon?weaponFrames[c.id]:passive?passiveFrames[c.id]:15;
+   const tag=c.k==='heal'?'즉시 회복':fresh?(weapon?'새 무기':'새 패시브'):'보유 기술 강화';
+   const level=c.k==='heal'?'체력 +40':fresh?'Lv.1 획득':`Lv.${c.lv-1} → Lv.${c.lv}`;
+   return `<button class="skill-card" data-skill-choice="${i}" data-skill-version="${state.choiceRevision}"><span class="skill-art" style="--sprite-x:${frame%4/3*100}%;--sprite-y:${Math.floor(frame/4)/3*100}%" aria-hidden="true"></span><span class="skill-copy"><small>${tag}</small><strong>${data.name}</strong><p>${data.desc}</p><span class="skill-upgrade">${level}</span>${weapon&&strings.evolveHint[c.id]?`<span class="skill-evolve">각성 조건 · ${strings.evolveHint[c.id]}</span>`:''}</span><span class="skill-number">${i+1}</span></button>`;
+  }).join('');
+ }
  function sync(){
   const state=getState(),mode=state.mode;
-  if(mode!==last){root.querySelector('[data-screen="title"]').hidden=mode!=='title';root.querySelector('[data-screen="select"]').hidden=mode!=='select';root.querySelector('[data-screen="shop"]').hidden=mode!=='shop';root.querySelector('[data-screen="result"]').hidden=!['win','over'].includes(mode);root.querySelector('.battle-help').hidden=!['play','pause'].includes(mode);root.querySelector('.quality-toggle').hidden=!['play','pause'].includes(mode);last=mode;}
+  if(mode!==last){root.querySelector('[data-screen="title"]').hidden=mode!=='title';root.querySelector('[data-screen="select"]').hidden=mode!=='select';root.querySelector('[data-screen="shop"]').hidden=mode!=='shop';root.querySelector('[data-screen="levelup"]').hidden=mode!=='levelup';root.querySelector('[data-screen="result"]').hidden=!['win','over'].includes(mode);root.querySelector('.battle-help').hidden=!['play','pause'].includes(mode);root.querySelector('.quality-toggle').hidden=!['play','pause'].includes(mode);last=mode;}
   if(state.quality!==quality){quality=state.quality;root.querySelectorAll('[data-action=quality]').forEach(el=>el.textContent=quality==='low'?'⚡ 저사양 모드':'화질 자동');document.documentElement.dataset.quality=quality;}
+  if(mode==='levelup'){if(skillVersion!==state.choiceRevision){skillVersion=state.choiceRevision;renderSkills(state);}if(skillPending!==state.level+'|'+state.pendingLevels){skillPending=state.level+'|'+state.pendingLevels;root.querySelector('#skill-queue').textContent=`탐험가 Lv.${state.level} · 남은 기술 선택 ${state.pendingLevels}회`;}}
   if(state.assetsLoaded!==loaded){loaded=state.assetsLoaded;const ready=loaded===state.assetsTotal;root.querySelector('[data-action=start]').disabled=!ready;root.querySelector('#asset-status').hidden=ready;root.querySelector('#asset-status').textContent='그래픽 준비 중… '+loaded+'/'+state.assetsTotal;}
   if(state.coins!==coins){root.querySelectorAll('[data-wallet]').forEach(el=>el.textContent=state.coins.toLocaleString());coins=state.coins;}
   const key=state.coins+'|'+state.shopRevision;
